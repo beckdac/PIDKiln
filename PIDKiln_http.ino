@@ -5,7 +5,6 @@
 #include <soc/efuse_reg.h>
 #include <Esp.h>
 #include <ESPAsyncWebServer.h>
-#include <U8g2lib.h>
 #include <Update.h>
 
 // Other variables
@@ -19,6 +18,7 @@ bool shouldReboot = false;
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 
+#include <Arduino.h> // for the watch dog stuff
 
 /*
 ** Core/main HTTP functions
@@ -105,7 +105,6 @@ String Debug_ESP32(const String& var){
  else if (var=="CHIP_REV") return String(ESP.getChipRevision());
  else if (var=="CHIP_MODEL") return String(ESP.getChipModel());
  else if (var=="CHIP_CORES") return String(ESP.getChipCores());
- else if (var=="CHIP_REVF") return String(REG_READ(EFUSE_BLK0_RDATA3_REG) >> 15, BIN);
  else if (var=="MAC_ADDRESS") return String(WiFi.macAddress());
  // SPI Flash RAM parameters
  //
@@ -653,33 +652,6 @@ struct tm timeinfo, *tmm;
 }
 
 
-// Function(s) writing LCD screenshot over WWW - not perfect - but working
-//
-char *screenshot;
-void out(const char *s){strcat(screenshot,s);}
-void do_screenshot(AsyncWebServerRequest *request){
-
-  screenshot=(char *)MALLOC(SCREEN_W*SCREEN_H*2*sizeof(char)+1);
-  if(screenshot==NULL){
-    DBG dbgLog(LOG_ERR,"[HTTP] Failed to allocate memory for screenshot");
-    request->send(500);
-    return;
-  }
-  *screenshot='\0';
-  //strcpy(screenshot,"");
-
-  AsyncResponseStream *response = request->beginResponseStream("image/x-portable-bitmap");
-  response->addHeader("Server","ESP Async Web Server");
-  response->addHeader("Content-Disposition","attachment; filename=\"PIDKiln_screenshot.pbm\"");
-
-  u8g2_WriteBufferPBM2(u8g2.getU8g2(),out);
-  response->println(screenshot);
-  free(screenshot); screenshot=NULL;
-  
-  request->send(response);
-}
-
-
 // Funnctin handling firmware upload/update (from https://github.com/lbernstone/asyncUpdate/blob/master/AsyncUpdate.ino)
 //
 void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -710,7 +682,7 @@ size_t content_len;
     } else {
       DBG Serial.println("[HTTP] Update complete");
       DBG Serial.flush();
-      Restart_ESP();
+      ESP.restart();
     }
   }
 }
@@ -810,8 +782,6 @@ void SETUP_WebServer(void) {
   server.on("/delete.html", HTTP_POST, POST_Handle_Delete);
 
   server.on("/load.html", HTTP_GET, GET_Handle_Load);
-
-  server.on("/screenshot.html", HTTP_GET, do_screenshot);
 
   server.on("/about.html", HTTP_GET, [](AsyncWebServerRequest *request){
     if(!_webAuth(request)) return;

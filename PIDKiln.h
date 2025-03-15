@@ -1,16 +1,6 @@
 #include <PID_v1.h>
 #include <Syslog.h>
 
-/* 
-** Some definitions - usually you should not edit this, but you may want to
-*/
-#define ENCODER0_PINA    34
-#define ENCODER0_PINB    35
-#define ENCODER0_BUTTON  32
-#define ENCODER_BUTTON_DELAY 150  // 150ms between button press readout
-#define ENCODER_ROTATE_DELAY 120  // 120ms between rotate readout
-const uint16_t Long_Press=400; // long press button takes about 0,9 second
-
 const int MAX_Prog_File_Size=10240;  // maximum file size (bytes) that can be uploaded as program, this limit is also defined in JS script (js/program.js)
 
 /*
@@ -18,18 +8,13 @@ const int MAX_Prog_File_Size=10240;  // maximum file size (bytes) that can be up
 **
 */
 
-#define EMR_RELAY_PIN 21
-#define SSR1_RELAY_PIN 19
-//#define SSR2_RELAY_PIN 22   // if you want to use additional SSR for second heater, uncoment this
+#define SSR1_RELAY_PIN 1
 
 // MAX31855 variables/defs
-#define MAXCS1  27    // for hardware SPI - HSPI (MOSI-13, MISO-12, CLK-14) - 1st device CS-27
-#define MAXCS2  15    // same SPI - 2nd device CS-15 (comment out if no second thermocouple)
+#define MAXCS1  3    // for hardware SPI - HSPI (MOSI-13, MISO-12, CLK-14) - 1st device CS-27
+#define MAXCS2  2    // same SPI - 2nd device CS-15 (comment out if no second thermocouple)
 
-// If you have power meter - uncoment this
-//#define ENERGY_MON_PIN 33       // if you don't use - comment out
-
-#define ALARM_PIN 26        // Pin goes high on abort
+#define ALARM_PIN 0        // Pin goes high on abort
 uint16_t ALARM_countdown=0; // countdown in seconds to stop alarm
 
 /*
@@ -45,66 +30,6 @@ uint32_t windowStartTime;
 //Specify the links and initial tuning parameters
 PID KilnPID(&kiln_temp, &pid_out, &set_temp, 0, 0, 0, P_ON_E, DIRECT);
 
-/*
-** Global value of LCD screen/menu and menu position
-**
-*/
-typedef enum {
-  SCR_MAIN_VIEW,      // group of main screens showing running program
-  SCR_MENU,           // menu
-  SCR_PROGRAM_LIST,   // list of all programs
-  SCR_PROGRAM_SHOW,   // showing program content
-  SCR_PROGRAM_DELETE, // deleting program
-  SCR_PROGRAM_FULL,   // step by step program display
-  SCR_QUICK_PROGRAM,  // set manually desire, single program step
-  SCR_ABOUT,          // short info screen
-  SCR_PREFERENCES,    // show current preferences
-  SCR_OTHER           // some other screens like about that are stateless
-} LCD_State_enum;
-
-typedef enum { // different main screens
-  MAIN_VIEW1,
-  MAIN_VIEW2,
-  MAIN_VIEW3,
-  MAIN_end
-} LCD_MAIN_View_enum;
-
-typedef enum { // menu positions
-  M_SCR_MAIN_VIEW,
-  M_LIST_PROGRAMS,
-  M_QUICK_PROGRAM,
-  M_INFORMATIONS,
-  M_PREFERENCES,
-  M_CONNECT_WIFI,
-  M_ABOUT,
-  M_RESTART,
-  M_END
-} LCD_SCR_MENU_Item_enum;
-
-LCD_State_enum LCD_State=SCR_MAIN_VIEW;          // global variable to keep track on where we are in LCD screen
-LCD_MAIN_View_enum LCD_Main=MAIN_VIEW1;          // main screen has some views - where are we
-LCD_SCR_MENU_Item_enum LCD_Menu=M_SCR_MAIN_VIEW; // menu items
-
-const char *Menu_Names[] = {"1) Main view", "2) List programs", "3) Quick program", "4) Information", "5) Preferences", "6) Reconnect WiFi", "7) About", "8) Restart"};
-
-typedef enum { // program menu positions
-  P_EXIT,
-  P_SHOW,
-  P_LOAD,
-  P_DELETE,
-  P_end
-} LCD_PSCR_MENU_Item_enum;
-
-const char *Prog_Menu_Names[] = {"Exit","Show","Load","Del."};
-const uint8_t Prog_Menu_Size=4;
-
-#define SCREEN_W 128   // LCD screen width and height
-#define SCREEN_H 64
-#define MAX_CHARS_PL SCREEN_W/3  // char can have min. 3 points on screen
-
-const uint8_t SCR_MENU_LINES=5;   // how many menu lines should be print
-const uint8_t SCR_MENU_SPACE=2;   // pixels spaces between lines
-const uint8_t SCR_MENU_MIDDLE=3;  // middle of the menu, where choosing will be possible
 
 /*
 ** Kiln program variables
@@ -158,9 +83,9 @@ typedef enum {
   PR_ERR_MAX31A_NC,       // MAX31855 A not connected
   PR_ERR_MAX31A_INT_ERR,  // failed to read MAX31855 internal temperature on kiln
   PR_ERR_MAX31A_KPROBE,   // failed to read K-probe temperature on kiln
-  PR_ERR_MAX31B_NC,       // MAX31855 B not connected
-  PR_ERR_MAX31B_INT_ERR,  // failed to read MAX31855 internal temperature on case
-  PR_ERR_MAX31B_KPROBE,   // failed to read K-probe temperature on case
+  PR_ERR_MAX66B_NC,       // MAX6677 B not connected
+  PR_ERR_MAX66B_INT_ERR,  // failed to read MAX6677 internal temperature on case
+  PR_ERR_MAX66B_KPROBE,   // failed to read K-probe temperature on case
   PR_ERR_USER_ABORT,      // user aborted
   PR_ERR_end
 } PROGRAM_ERROR_STATE;
@@ -282,7 +207,6 @@ typedef enum {
  VFLOAT,
 } TYPE;
 
-
 // Structure for keeping preferences values
 struct PrefsStruct {
   TYPE type=NONE;
@@ -305,7 +229,7 @@ File CSVFile,LOGFile;
 ** Other stuff
 **
 */
-const char *PVer = "PIDKiln v1.5";
+const char *PVer = "PIDKiln v1.5 (dacb)";
 const char *PDate = "2024.12.18";
 
 // If defined debug - do debug, otherwise comment out all debug lines
@@ -325,10 +249,7 @@ Syslog syslog(udpClient, SYSLOG_PROTO_IETF);
 ** Function defs
 **
 */
-void load_msg(char msg[MAX_CHARS_PL]);
-boolean return_LCD_string(char* msg,char* rest, int mod, uint16_t screen_w=SCREEN_W);
-void LCD_Display_program_summary(int dir=0,byte load_prg=0);
-void LCD_Display_quick_program(int dir=0,byte pos=0);
+void Generate_INDEX();
 
 uint8_t Cleanup_program(uint8_t err=0);
 uint8_t Load_program(char *file=0);

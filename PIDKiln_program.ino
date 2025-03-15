@@ -298,7 +298,6 @@ void END_Program(){
   Program_run_state=PR_ENDED;
   KilnPID.SetMode(MANUAL);
   Disable_SSR();
-  Disable_EMR();
   Program_run_end=time(NULL);
   Close_log_file();
   set_temp=0;
@@ -317,7 +316,6 @@ void ABORT_Program(uint8_t error){
     END_Program();
     Program_run_state=PR_ABORTED;
     //Program_run_start=0;
-    START_Alarm();
   }
 }
 
@@ -445,12 +443,9 @@ void START_Program(){
   DBG dbgLog(LOG_INFO,"[PRG] Starting new program!");
   Program_run_state=PR_RUNNING;
   Program_start_temp=kiln_temp;
-  Energy_Usage=0;
   Program_error=0;
   TempA_errors=TempB_errors=0;  // Reset temperature errors
   
-  Enable_EMR();
-
   KilnPID.SetTunings(Prefs[PRF_PID_KP].value.vfloat,Prefs[PRF_PID_KI].value.vfloat,Prefs[PRF_PID_KD].value.vfloat,Prefs[PRF_PID_POE].value.uint8); // set actual PID parameters
   Program_run_start=time(NULL);
   Program_calculate_steps(true);
@@ -503,13 +498,7 @@ uint32_t now;
       // Update temperature readout
       Update_TemperatureA();
 
-      // Check if there is Alarm ON - if so, lower time and call STOP
-      if(ALARM_countdown>0){
-        if(ALARM_countdown<=1) STOP_Alarm();
-        ALARM_countdown--;
-      }
-
-      // Do slow stuff every 10th second - cnt1=[0..9]
+       // Do slow stuff every 10th second - cnt1=[0..9]
       //
       if(cnt1>9) cnt1=0;
       else cnt1++;
@@ -518,15 +507,8 @@ uint32_t now;
         Update_TemperatureB();      // this does not have to be updated so often as kiln temp
       }
 #endif
-#ifdef ENERGY_MON_PIN
-      if(cnt1==4){
-        Read_Energy_INPUT();
-      }
-#endif
-      // Do Main view screen refreshing if there is a program and if it's running
-      if(LCD_State==SCR_MAIN_VIEW && Program_run_size && LCD_Main==MAIN_VIEW1) LCD_display_mainv1();
 
-      if(Program_run_state==PR_RUNNING || Program_run_state==PR_PAUSED || Program_run_state==PR_THRESHOLD){
+        if(Program_run_state==PR_RUNNING || Program_run_state==PR_PAUSED || Program_run_state==PR_THRESHOLD){
         // Do all the program recalc
         Program_calculate_steps();
 
@@ -534,7 +516,6 @@ uint32_t now;
           SAFETY_Check();
         }else if(cnt1==9){
           cnt1=0;
-          if(LCD_Main==MAIN_VIEW2 && (Program_run_state==PR_RUNNING || Program_run_state==PR_PAUSED)) LCD_display_mainv2();
           DBG dbgLog(LOG_INFO,"[PRG] Pid_out RAW:%.2f Pid_out:%.2f Now-window:%d WindowSize:%d Prg_state:%d\n",pid_out,pid_out*PID_WINDOW_DIVIDER,(now - windowStartTime), Prefs[PRF_PID_WINDOW].value.uint16, (byte)Program_run_state);
         }
        }
